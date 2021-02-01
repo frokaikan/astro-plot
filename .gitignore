@@ -1,0 +1,4 @@
+*.doc
+*.docx
+.idea
+__pycache__
