@@ -5,6 +5,11 @@ from PyQt5.QtGui import QRegExpValidator, QImage, QPixmap
 from PyQt5.QtWidgets import QApplication, QMainWindow, QWidget, QVBoxLayout, QPushButton, QDialog, QHBoxLayout, QLayout, \
     QLabel, QDateTimeEdit, QLineEdit, QSlider, QFileDialog, QMessageBox, QColorDialog, QComboBox
 from matplotlib import pyplot as plt
+
+from util import doInThread
+
+plt.rcParams['font.sans-serif'] = ['SimHei']  # 用来正常显示中文标签
+plt.rcParams['axes.unicode_minus'] = False  # 用来正常显示负号
 plt.ioff()
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg, NavigationToolbar2QT
 import numpy as np
@@ -69,10 +74,10 @@ class UI:
         lbl2.setPixmap(pix)
 
         btn1 = QPushButton("动态巡天结果展示", self.mainWidget)
-        btn2 = QPushButton("静态巡天结果展示", self.mainWidget)
+        btn2 = QPushButton("巡天规划甘特图", self.mainWidget)
         btn3 = QPushButton("巡天覆盖曲线展示", self.mainWidget)
 
-        layout = CBindWidgets(lbl1, lbl2, RBindWidgets(btn1, btn2, btn3))
+        layout = CBindWidgets(lbl1, lbl2, RBindWidgets(btn1, btn3, btn2))
         self.mainWidget.setLayout(layout)
 
         btn1.clicked.connect(self.showDyn)
@@ -93,12 +98,15 @@ class UI:
         self.dyn.ax: plt.Axes
         self.dyn.fig = plt.figure()
         self.dyn.ax = self.dyn.fig.add_subplot()
+        self.dyn.ax.set_xlabel("黄道坐标")
+        self.dyn.ax.xaxis.set_ticklabels([])
+        self.dyn.ax.yaxis.set_ticklabels([])
 
         self.dyn.canvas = FigureCanvasQTAgg(self.dyn.fig)
         self.dyn.canvas.setParent(self.dyn.dialog)
-        self.dyn.toolbar = NavigationToolbar2QT(self.dyn.canvas, self.dyn.dialog)
+        # self.dyn.toolbar = NavigationToolbar2QT(self.dyn.canvas, self.dyn.dialog)
 
-        self.dyn.dialog.setMinimumSize(2000, 1500)
+        self.dyn.dialog.setFixedSize(1024, 768)
 
         # 布局
         self.dyn.btnImport = QPushButton("导入数据", self.dyn.dialog)
@@ -137,22 +145,24 @@ class UI:
         self.dyn.animSpeedEditor.setValidator(validator)
         self.dyn.animSpeedEditor.setEnabled(False)
 
-        layoutControl = CBindWidgets(
-            RBindWidgets(self.dyn.btnImport, self.dyn.btnExport),
-            RBindWidgets(QLabel("开始时间", self.dyn.dialog), 1, self.dyn.startEditor),
-            RBindWidgets(QLabel("结束时间", self.dyn.dialog), 1, self.dyn.stopEditor),
-        )
+        layoutDown = QVBoxLayout()
+        layoutDown.addLayout(RBindWidgets(1, self.dyn.btnImport, self.dyn.btnExport, 1))
+        layoutDown.addLayout(RBindWidgets(
+            QLabel("开始时间", self.dyn.dialog), self.dyn.startEditor, 1,
+            QLabel("结束时间", self.dyn.dialog), self.dyn.stopEditor
+        ))
+        layoutDown.addWidget(self.dyn.slider)
+        layoutDown.addLayout(RBindWidgets(
+            1, QLabel("当前时间", self.dyn.dialog), self.dyn.curTime, 1
+        ))
+        layoutDown.addLayout(RBindWidgets(self.dyn.pauseOrRecoverBtn, self.dyn.stopBtn))
+        layoutDown.addLayout(RBindWidgets(
+            QLabel("动画速度 __s/200ms", self.dyn.dialog), self.dyn.animSpeedEditor
+        ))
 
-        layoutShow = CBindWidgets(
-            RBindWidgets(QLabel("当前时间", self.dyn.dialog), 1, self.dyn.curTime),
-            self.dyn.slider,
-            RBindWidgets(self.dyn.pauseOrRecoverBtn, self.dyn.stopBtn),
-            RBindWidgets(QLabel("动画速度 __s/200ms", self.dyn.dialog), 1, self.dyn.animSpeedEditor)
-        )
-
-        widgetDown = layout2widget(self.dyn.dialog, RBindWidgets(layoutControl, layoutShow))
+        widgetDown = layout2widget(self.dyn.dialog, layoutDown)
         widgetDown.setMaximumHeight(300)
-        widgetUp = layout2widget(self.dyn.dialog, CBindWidgets(self.dyn.canvas, self.dyn.toolbar))
+        widgetUp = layout2widget(self.dyn.dialog, CBindWidgets(self.dyn.canvas))
         dialogLayout = CBindWidgets(widgetUp, widgetDown)
         self.dyn.dialog.setLayout(CBindWidgets(widgetUp, widgetDown))
 
@@ -201,7 +211,23 @@ class UI:
                     self.dyn.rawData = readFile(fileName[0])
                     staticMotion()
                     self.dyn.ax.clear()
-                    self.dyn.plotterWrapper = PlotterWrapper(self.dyn.fig, self.dyn.ax, self.dyn.canvas, self.dyn.rawData)
+                    '''
+                    tempMsg = QMessageBox(self.dyn.dialog)
+                    tempMsg.setIcon(QMessageBox.Information)
+                    tempMsg.setWindowTitle("正在载入")
+                    tempMsg.setText("由于数据量较大, 请耐心等待...")
+                    tempBtn = QPushButton("确定", self.dyn.dialog)
+                    tempBtn.setEnabled(False)
+                    tempMsg.addButton(tempBtn, QMessageBox.YesRole)
+                    tempMsg.open()
+                    # 
+                    tempBtn.setEnabled(True)
+                    tempMsg.setText("数据载入完毕")
+                    '''
+                    self.dyn.plotterWrapper = doInThread(self.dyn.dialog,
+                        PlotterWrapper,
+                        self.dyn.fig, self.dyn.ax, self.dyn.canvas, self.dyn.rawData
+                    )
                     startTime = int(np.floor(self.dyn.plotterWrapper.data["timestamp"][0]))
                     stopTime = int(np.ceil(self.dyn.plotterWrapper.data["timestamp"][-1]))
                     self.dyn.startEditor.setDateTime(QDateTime.fromTime_t(startTime))
@@ -313,9 +339,11 @@ class UI:
         self.gantt.ax: plt.Axes
 
         self.gantt.fig, self.gantt.ax = plt.subplots()
+        self.gantt.ax.xaxis.set_ticklabels([])
+        self.gantt.ax.yaxis.set_ticklabels([])
         self.gantt.canvas = FigureCanvasQTAgg(self.gantt.fig)
         self.gantt.canvas.setParent(self.gantt.dialog)
-        self.gantt.navigator = NavigationToolbar2QT(self.gantt.canvas, self.gantt.dialog)
+        # self.gantt.navigator = NavigationToolbar2QT(self.gantt.canvas, self.gantt.dialog)
 
         # 布局
 
@@ -328,43 +356,42 @@ class UI:
         self.gantt.startTimeEditor = QDateTimeEdit(self.gantt.dialog)
         self.gantt.startTimeEditor.setDisplayFormat("yyyy-MM-dd HH:mm:ss")
         self.gantt.stepEditor = QComboBox(self.gantt.dialog)
-        self.gantt.stepEditor.addItem("1 hour")
-        self.gantt.stepEditor.addItem("3 hours")
-        self.gantt.stepEditor.addItem("12 hours")
-        self.gantt.stepEditor.addItem("1 day")
+        self.gantt.stepEditor.addItem("1小时")
+        self.gantt.stepEditor.addItem("3小时")
+        self.gantt.stepEditor.addItem("12小时")
+        self.gantt.stepEditor.addItem("1天")
 
         layoutLeft = CBindWidgets(
-            RBindWidgets(self.gantt.btnImport, self.gantt.btnPlot),
+            RBindWidgets(self.gantt.btnImport),
             RBindWidgets(QLabel("开始时间", self.gantt.dialog), self.gantt.startTimeEditor),
             RBindWidgets(QLabel("步长", self.gantt.dialog), self.gantt.stepEditor),
+            RBindWidgets(self.gantt.btnPlot)
         )
 
         # 右侧
 
-        # 颜色
-        NSeries = 5
+        # 颜色说明
         layoutRight = QVBoxLayout()
-        colors = [() for x in range(NSeries)]
-        btns = [QPushButton("选择颜色", self.gantt.dialog) for x in range(NSeries)]
+        name_color = (
+            ("巡天观测",      0x86ff6b),
+            ("南大西洋异常区", 0xff2111),
+            ("非巡天时段",    0xffd694),
+            ("轨道维持",      0xff7e57),
+            ("空间站对接",    0xffa1c2),
+            ("空闲时段",     0xffffff)
+        )
+        colorTuple = []
+        for idx in range(len(name_color)):
+            l = QLabel(f"{idx + 1} : {name_color[idx][0]}", self.gantt.dialog)
+            c = QLabel(self.gantt.dialog)
+            chex = name_color[idx][1]
+            c.setStyleSheet(f"QLabel{{background-color:rgb({chex // 65536},{chex // 256 % 256},{chex % 256});}}")
+            colorTuple.append(f"#{chex:06x}")
+            layoutRight.addLayout(RBindWidgets(c, l))
+        colorTuple = tuple(colorTuple)
 
-        def setColorWrapper(targetLabel: QLabel, labelIndex):
-            def setColor():
-                col = QColorDialog.getColor()
-                if col.isValid():
-                    colValue = col.getRgb()
-                    colors[labelIndex] = [x / 255 for x in colValue]
-                    colText = f"0x{colValue[0]:02x}{colValue[1]:02x}{colValue[2]:02x}"
-                    targetLabel.setText(colText)
-
-            return setColor
-
-        for i in range(NSeries):
-            lbl = QLabel("", self.gantt.dialog)
-            btns[i].clicked.connect(setColorWrapper(lbl, i))
-            layoutRight.addLayout(RBindWidgets(QLabel(f"label {i + 1} ", self.gantt.dialog), btns[i], lbl))
-
-        self.gantt.dialog.setMinimumSize(2000, 1500)
-        widgetUp = CBindWidgets(self.gantt.canvas, self.gantt.navigator)
+        self.gantt.dialog.setFixedSize(2000, 1500)
+        widgetUp = CBindWidgets(self.gantt.canvas)
         widgetDown = layout2widget(self.gantt.dialog, RBindWidgets(layoutLeft, layoutRight))
         widgetDown.setMaximumHeight(300)
 
@@ -378,14 +405,10 @@ class UI:
             if fileName[0]:
                 try:
                     self.gantt.rawData, self.gantt.totalLabel = readGanttFile(fileName[0])
-                    if self.gantt.totalLabel > NSeries:
-                        QMessageBox.information(self.gantt.dialog, "label错误", f"label取值范围必须为1 - {NSeries}",
+                    if self.gantt.totalLabel > len(name_color):
+                        QMessageBox.information(self.gantt.dialog, "label错误", f"label取值范围必须为1 - {len(name_color)}",
                                                 QMessageBox.Ok)
                         return
-                    for i in range(self.gantt.totalLabel):
-                        btns[i].setEnabled(True)
-                    for i in range(self.gantt.totalLabel, NSeries):
-                        btns[i].setEnabled(False)
                     self.gantt.startTimeEditor.setDateTime(QDateTime.fromSecsSinceEpoch(self.gantt.rawData[0][0]))
                     self.gantt.stepEditor.setCurrentIndex(3)
                     self.gantt.btnPlot.setEnabled(True)
@@ -396,16 +419,12 @@ class UI:
 
         # 绘图
         def plot():
-            for i in range(self.gantt.totalLabel):
-                if colors[i] == ():
-                    QMessageBox.information(self.gantt.dialog, "图例不全", f"请补全{i + 1}号图例", QMessageBox.Ok)
-                    return
             startTime = self.gantt.startTimeEditor.dateTime().toSecsSinceEpoch()
             stepIndices = [3600 * x for x in (1, 3, 12, 24)]
             stepTime = stepIndices[self.gantt.stepEditor.currentIndex()]
             wrapper = GanttPlotterWrapper(
                 self.gantt.fig, self.gantt.ax,
-                self.gantt.rawData, colors[:self.gantt.totalLabel],
+                self.gantt.rawData, colorTuple,
                 startTime, stepTime
             )
             self.gantt.ax.clear()
@@ -427,19 +446,21 @@ class UI:
         self.lc.ax : plt.Axes
 
         self.lc.fig, self.lc.ax = plt.subplots()
+        self.lc.ax.xaxis.set_ticklabels([])
+        self.lc.ax.yaxis.set_ticklabels([])
         self.lc.canvas = FigureCanvasQTAgg(self.lc.fig)
         self.lc.canvas.setParent(self.lc.dialog)
-        self.lc.toolbar = NavigationToolbar2QT(self.lc.canvas, self.lc.dialog)
+        # self.lc.toolbar = NavigationToolbar2QT(self.lc.canvas, self.lc.dialog)
 
         # 布局
         self.lc.modeSelect = QComboBox(self.lc.dialog)
         self.lc.modeSelect.addItem("巡天面积随时间变化曲线")
-        self.lc.btnImport = QPushButton("导入数据", self.lc.dialog)
+        self.lc.btnImport = QPushButton("确定", self.lc.dialog)
 
-        self.lc.dialog.setMinimumSize(2000, 1500)
-        self.lc.widgetUp = layout2widget(self.lc.dialog, CBindWidgets(self.lc.canvas, self.lc.toolbar))
+        self.lc.dialog.setFixedSize(2000, 1500)
+        self.lc.widgetUp = layout2widget(self.lc.dialog, CBindWidgets(self.lc.canvas))
         self.lc.widgetDown = layout2widget(self.lc.dialog, RBindWidgets(1, self.lc.modeSelect, self.lc.btnImport, 1))
-        self.lc.widgetDown.setMaximumHeight(200)
+        self.lc.widgetDown.setMaximumHeight(100)
 
         self.lc.dialog.setLayout(CBindWidgets(self.lc.widgetUp, self.lc.widgetDown))
 

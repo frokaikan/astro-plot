@@ -50,6 +50,8 @@ class PlotterWrapper:
         self.ax.set_aspect("auto")
         self.ax.set_xlim(-1.2, 1.2)
         self.ax.set_ylim(-1.2, 1.2)
+        self.ax.xaxis.set_ticks([])
+        self.ax.yaxis.set_ticks([])
 
         self.background()
         self.init_anim()
@@ -76,13 +78,13 @@ class PlotterWrapper:
     def ifSpecialView(self, dec, ra):
         specialDec = [36, 2 * 36, 3 * 36, 4 * 36, 5 * 36, 6 * 36, 7 * 36, 8 * 36, 9 * 36, 359]
         specialRa = [35, -45, 55, -65, 75, -70, 60, -50, 40, -30]
-        dec = dec * 180 / np.pi
-        ra = ra * 180 / np.pi
+        # dec = dec * 180 / np.pi
+        # ra = ra * 180 / np.pi
         for sDec, sRa in zip(specialDec, specialRa):
             if sDec > 180:
                 sDec -= 360
-            sDec = sDec * 180 / np.pi
-            sRa = sRa * 180 / np.pi
+            sDec = sDec / 180 * np.pi
+            sRa = sRa / 180 * np.pi
             diff = ballDist((dec, ra), (sDec, sRa))
             diff = diff / np.pi * 180
             if diff < 3:

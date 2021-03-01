@@ -87,17 +87,23 @@ class GanttPlotterWrapper:
             lbl.append(tm.strftime("%Y-%m-%d %H:%M:%S"))
             t += diff
         self.ax.yaxis.set_ticklabels(lbl)
+        print(lbl)
+        # self.ax.invert_yaxis()
 
-        # legend
+        # legend : ignore
+        '''
         legends = []
         for i in range(len(self.colorTuple)):
             pch = patches.Patch(color = self.colorTuple[i], label = f"label {i + 1}")
             legends.append(pch)
         self.ax.legend(handles = legends, loc = "upper left")
+        '''
 
         # plot range
         self.ax.set_xlim(0, 1)
         self.ax.set_ylim(0, 1)
+        self.ax.set_xticklabels([])
+        self.ax.invert_yaxis()
         print("plot OK")
 
 
